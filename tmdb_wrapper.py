@@ -4,14 +4,15 @@ import tmdbsimple as tmdb
 
 class TMDB_RESULT:
 
-    img_path = URL("https://image.tmdb.org/t/p/original")
+    img_path = "https://image.tmdb.org/t/p/original"
+    thumbnail_path = "https://image.tmdb.org/t/p/w500"
 
     def __init__(self, data=None):
         self.genres_ids=[]
         self.id=-1
         self.title = ""
-        self.vote_average = 0
-        self.poster_path = ""
+        self.vote_average:float = 0.0
+        self.poster_path = None
         self.overview = ""
         self.media_type = ""
         self.release_date = ""
@@ -22,19 +23,19 @@ class TMDB_RESULT:
     def _parse_data(self, data):
         self.id = data.get('id', -1)
         self.genres_ids = data.get('genre_ids', [])
-        self.vote_average = data.get('vote_average', 0)
-        self.poster_path = data.get('poster_path', "")
-        self.overview = data.get('overview', "")
+        self.vote_average = round(float(data.get('vote_average', 0)), 1)
+        self.poster_path = data.get('poster_path', None)
+        self.overview = data.get('overview', None)
         
         # Handle title/name difference
         if 'title' in data:  # Movie
-            self.title = data.get('title', "")
+            self.title = data.get('title', None)
             self.media_type = "movie"
-            self.release_date = data.get('release_date', "")
+            self.release_date = data.get('release_date', None)
         elif 'name' in data:  # TV Show
-            self.title = data.get('name', "")
+            self.title = data.get('name', None)
             self.media_type = "tv"
-            self.release_date = data.get('first_air_date', "")
+            self.release_date = data.get('first_air_date', None)
         else:
             self.title = "Unknown Title"
 
@@ -62,24 +63,29 @@ class TMDB_RESULT:
         """Get full URL for poster image"""
         if not self.poster_path:
             return None
-        return str(self.img_path.join(self.poster_path))
+        return self.img_path + self.poster_path
+    
+    def get_thumbnail_url(self) -> str|None:
+        """Get full URL for thumbnail image"""
+        if not self.poster_path:
+            return None
+        return self.thumbnail_path + self.poster_path
 
-
-    def download_poster(self, path: str) -> None:
+    def download_poster(self) -> bytes|None:
         """Download poster image to specified path"""
         if not self.poster_path:
             print("No poster path available.")
             return
         
-        full_url = self.img_path.join(self.poster_path)
+        full_url = self.img_path + self.poster_path
         try:
             response = tmdb.requests.get(full_url)
             response.raise_for_status()
-            with open(path, 'wb') as file:
-                file.write(response.content)
-            print(f"Poster downloaded to {path}")
+            return response.content
         except Exception as e:
             print(f"Error downloading poster: {e}")
+
+
 
 class TMDB_WRAPPER:
     
@@ -124,12 +130,32 @@ class TMDB_WRAPPER:
 
         # Create formatted message
         message_text = f"🎬 *{result.title}*\n"
-        message_text += f"📺 Type: {result.media_type}\n"
         message_text += f"⭐ Rating: {result.vote_average}/10\n"
-        message_text += f"🆔 ID: {result.id}\n"
+        # add trailer link if available
+        trailer = self.find_youtube_trailer(result)
+        if trailer:
+            message_text += f"📺 Trailer: [Watch here]({trailer})\n"       
         message_text += f"🎭 Genres: {genres_str}\n"
         message_text += f"📅 Release Date: {result.release_date}\n\n"
-        message_text += f"📝 {result.overview}{'...' if len(result.overview) > 300 else ''}"
-
+        if len(result.overview) + len(message_text) > 1000:
+            message_text += f"📝 {result.overview[:1000-len(message_text)]}..."
+        else:
+            message_text += f"📝 {result.overview}"    
+       
         return message_text
     
+    def find_youtube_trailer(self, result: TMDB_RESULT) -> str|None:
+        """Find YouTube trailer for a movie or TV show"""
+        try:
+            if result.media_type == "movie":
+                video = tmdb.Movies(result.id).videos().get('results', [])
+            else:
+                video = tmdb.TV(result.id).videos().get('results', [])
+            
+            for item in video:
+                if item['site'] == 'YouTube' and item['type'] == 'Trailer' and item['size'] == 1080:
+                    return f"https://www.youtube.com/watch?v={item['key']}"
+            return None
+        except Exception as e:
+            print(f"Error finding YouTube trailer: {e}")
+            return None
