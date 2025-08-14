@@ -1,0 +1,25 @@
+services:
+  mediainfo-bot:
+    build: .
+    container_name: mediainfo-bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TMDB_API=${TMDB_API}
+    env_file:
+      - .env
+    # volumes:
+    # Mount the current directory for development (optional)
+    # - .:/app
+    # Mount logs directory (optional)
+    # - ./logs:/app/logs
+    # networks:
+    #   - bot-network
+    # For webhook mode, uncomment the ports section
+    # ports:
+    #   - "8000:8000"
+
+# Optional: Create a custom network
+# networks:
+#   bot-network:
+#     driver: bridge
