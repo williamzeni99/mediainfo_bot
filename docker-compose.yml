@@ -17,7 +17,7 @@ services:
     #   - bot-network
     # For webhook mode, uncomment the ports section
     ports:
-      - "8000:8000"
+      - "8132:8000"
 
 # Optional: Create a custom network
 # networks:
