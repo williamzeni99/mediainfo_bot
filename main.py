@@ -31,7 +31,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Welcome to the Media Info! Use @mediajellyinfoer_bot <media_name> to get inline suggestions. Click on one cover to get the results.")
 
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.inline_query.query
+    query = update.inline_query.query.split("///")
+    extra_notes = query[1].strip() if len(query) > 1 else ""
+    query = query[0].strip() if query else ""
+    # extra_notes = ""
+    print(f"Received inline query: {query}, extra notes: {extra_notes}")
     if not query:
         return
     
@@ -43,8 +47,14 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             title = movie.get_formatted_title()
 
             if movie.poster_path is None:
-                print(f"No poster available for {title}, skipping photo result.")
+                # print(f"No poster available for {title}, skipping photo result.")
                 continue
+
+
+            caption = tmdb.print_result(movie)
+            if extra_notes:
+                caption += f"\n\n⚠️ Note extra: {extra_notes}"
+
 
             # Create photo result with poster
             result = InlineQueryResultPhoto(
@@ -53,7 +63,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 thumbnail_url=movie.get_thumbnail_url(),
                 title=title,
                 description=f"📅 {movie.release_date}",
-                caption= tmdb.print_result(movie),
+                caption= caption,
                 parse_mode='Markdown'
             )
             results.append(result)
@@ -97,6 +107,7 @@ async def getimage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 app.add_handler(CommandHandler("start", start))
 app.add_handler(InlineQueryHandler(callback=inline_query))
 app.add_handler(CommandHandler("img", getimage))  # Reuse start handler for help command
+#app.remove_handler(InlineQueryHandler(callback=inline_query))
 
 
 
