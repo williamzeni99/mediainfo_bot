@@ -28,7 +28,12 @@ app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("Welcome to the Media Info! Use @mediajellyinfoer_bot <media_name> to get inline suggestions. Click on one cover to get the results.")
+    text="Welcome to the Media Info! Use @mediajellyinfoer_bot <media_name> to get inline suggestions. Click on one cover to get the results."
+    text += "\n\nYou can also use the following commands:\n"
+    text += "/search <title> - Search for movies or TV shows IDS (more extensive)\n"
+    text += "/getmovie <id> - Get movie details by ID\n"
+    text += "/gettv <id> - Get TV show details by ID\n"
+    await update.message.reply_text(text)
 
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.inline_query.query.split("///")
@@ -46,8 +51,10 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             # Get basic movie info
             title = movie.get_formatted_title()
 
+            print(f"Processing movie: {title}")
+
             if movie.poster_path is None:
-                # print(f"No poster available for {title}, skipping photo result.")
+                print(f"No poster available for {title}, skipping photo result.")
                 continue
 
 
@@ -104,13 +111,92 @@ async def getimage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as e:
         await update.message.reply_text(f"Error fetching image: {e}")
 
+
+async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.message.text.split(maxsplit=1)
+    if len(query) < 2:
+        await update.message.reply_text("Please provide a movie or TV show name.")
+        return
+    
+    title = query[1]
+    try:
+        movies = tmdb.search(title)
+        if not movies:
+            await update.message.reply_text("No results found.")
+            return
+        
+        text="Results for your search:\n\n"
+        text+= "TITLE - MEDIA TYPE: ID\n"
+        text+= "-------------------------\n"
+        for movie in movies:
+            text += f"{movie.get_formatted_title()} - {movie.media_type}: {movie.id}\n"
+
+        await update.message.reply_text(text, parse_mode='Markdown')
+    except Exception as e:
+        await update.message.reply_text(f"Error fetching results: {e}")
+        return
+
+async def getmovie_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.message.text.split(maxsplit=1)
+    if len(query) < 2:
+        await update.message.reply_text("Please provide a movie ID.")
+        return
+    
+    try:
+        movie_id = int(query[1])
+        movie = tmdb.get_movie(movie_id)
+        
+        if not movie:
+            await update.message.reply_text("No results found for this ID.")
+            return
+        
+        if movie.poster_path is None:
+            await update.message.reply_text("No poster available for this media.")
+            return
+        
+        poster = movie.download_poster()
+        if poster is None:
+            await update.message.reply_text("Failed to download poster.")
+            return
+        await update.message.reply_photo(photo=poster, caption=tmdb.print_result(movie), parse_mode='Markdown')
+    
+    except Exception as e:
+        await update.message.reply_text(f"Error fetching image: {e}")
+
+async def gettv_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.message.text.split(maxsplit=1)
+    if len(query) < 2:
+        await update.message.reply_text("Please provide a TV show ID.")
+        return
+    
+    try:
+        tv_id = int(query[1])
+        tv_show = tmdb.get_tv_show(tv_id)
+        
+        if not tv_show:
+            await update.message.reply_text("No results found for this ID.")
+            return
+        
+        if tv_show.poster_path is None:
+            await update.message.reply_text("No poster available for this media.")
+            return
+        
+        poster = tv_show.download_poster()
+        if poster is None:
+            await update.message.reply_text("Failed to download poster.")
+            return
+        await update.message.reply_photo(photo=poster, caption=tmdb.print_result(tv_show), parse_mode='Markdown')
+    
+    except Exception as e:
+        await update.message.reply_text(f"Error fetching image: {e}")
+
 app.add_handler(CommandHandler("start", start))
 app.add_handler(InlineQueryHandler(callback=inline_query))
 app.add_handler(CommandHandler("img", getimage))  # Reuse start handler for help command
 #app.remove_handler(InlineQueryHandler(callback=inline_query))
-
-
-
+app.add_handler(CommandHandler("getmovie", getmovie_byid))  # New command to get movie by ID
+app.add_handler(CommandHandler("gettv", gettv_byid))  # New command to get TV show by ID
+app.add_handler(CommandHandler("search", search))  # New command to search for movies or TV shows
 app.run_polling()
 
 

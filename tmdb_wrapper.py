@@ -117,6 +117,26 @@ class TMDB_WRAPPER:
             print(f"Error searching TMDB: {e}")
             return []
 
+    def get_movie(self, movie_id: int) -> TMDB_RESULT:
+        """Get movie details by ID"""
+        try:
+            movie = tmdb.Movies(movie_id)
+            data = movie.info()
+            return TMDB_RESULT(data)
+        except Exception as e:
+            print(f"Error getting movie details: {e}")
+            return TMDB_RESULT()
+        
+    def get_tv_show(self, tv_id: int) -> TMDB_RESULT:
+        """Get TV show details by ID"""
+        try:
+            tv = tmdb.TV(tv_id)
+            data = tv.info()
+            return TMDB_RESULT(data)
+        except Exception as e:
+            print(f"Error getting TV show details: {e}")
+            return TMDB_RESULT()
+
     def print_result(self, result: TMDB_RESULT)-> str:
         """return a str with icons for telegram and resolves genere ids"""
         
