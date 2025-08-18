@@ -1,6 +1,11 @@
 from httpx import URL
 import tmdbsimple as tmdb 
 
+class Genre:
+    def __init__(self, data):
+        self.id = data.get('id', -1)
+        self.name = data.get('name', "Unknown Genre")
+    
 
 class TMDB_RESULT:
 
@@ -26,6 +31,12 @@ class TMDB_RESULT:
         self.vote_average = round(float(data.get('vote_average', 0)), 1)
         self.poster_path = data.get('poster_path', None)
         self.overview = data.get('overview', None)
+
+        #for tv shows
+        self.status = data.get('status', None)
+        self.number_of_seasons = data.get('number_of_seasons', None)
+        self.number_of_episodes = data.get('number_of_episodes', None)
+        self.genres:list[Genre] = data.get('genres', [])
         
         # Handle title/name difference
         if 'title' in data:  # Movie
@@ -34,7 +45,7 @@ class TMDB_RESULT:
             self.release_date = data.get('release_date', None)
         elif 'name' in data:  # TV Show
             self.title = data.get('name', None)
-            self.media_type = "tv"
+            self.media_type = "tv-show"
             self.release_date = data.get('first_air_date', None)
         else:
             self.title = "Unknown Title"
@@ -108,7 +119,8 @@ class TMDB_WRAPPER:
             # Search TV shows
             search.tv(query=title)
             for tv_data in search.results:
-                result = TMDB_RESULT(tv_data)
+                result = self.get_tv_show(tv_data['id'])
+                # result = TMDB_RESULT(tv_data)
                 results.append(result)
             
             return results
@@ -140,23 +152,40 @@ class TMDB_WRAPPER:
     def print_result(self, result: TMDB_RESULT)-> str:
         """return a str with icons for telegram and resolves genere ids"""
         
-        if result.media_type == "movie":
-            x_genres = tmdb.Genres().movie_list().get('genres', [])
+        if len(result.genres_ids) == 0 and len(result.genres)!= 0:
+            genres = [genre['name'] for genre in result.genres]
+        elif len(result.genres_ids) > 0:
+            if result.media_type == "movie":
+                x_genres = tmdb.Genres().movie_list().get('genres', [])
+            else:
+                x_genres = tmdb.Genres().tv_list().get('genres', [])
+            genres = [genre['name'] for genre in x_genres if genre['id'] in result.genres_ids]
         else:
-            x_genres = tmdb.Genres().tv_list().get('genres', [])
-        
-        genres = [genre['name'] for genre in x_genres if genre['id'] in result.genres_ids]
+            genres = []
+
         genres_str = ', '.join(genres) if genres else "Unknown Genres"
 
         # Create formatted message
         message_text = f"🎬 *{result.title}*\n"
         message_text += f"⭐ Rating: {result.vote_average}/10\n"
+        # add media type icon 
+        message_text += f"📽️​ Type: {result.media_type}\n"
         # add trailer link if available
         trailer = self.find_youtube_trailer(result)
         if trailer:
             message_text += f"📺 Trailer: [Watch here]({trailer})\n"       
         message_text += f"🎭 Genres: {genres_str}\n"
-        message_text += f"📅 Release Date: {result.release_date}\n\n"
+        message_text += f"📅 Release Date: {result.release_date}\n"
+
+        if result.number_of_seasons is not None:
+            message_text += f"🍿 Seasons: {result.number_of_seasons}\n"
+        if result.number_of_episodes is not None:
+            message_text += f"#️⃣ Episodes: {result.number_of_episodes}\n"
+        if result.status:
+            message_text += f"📌 Status: {result.status}\n"
+
+        message_text += "\n\n"
+        
         if len(result.overview) + len(message_text) > 1000:
             message_text += f"📝 {result.overview[:1000-len(message_text)]}..."
         else:

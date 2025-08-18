@@ -137,7 +137,10 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
 async def getmovie_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.message.text.split(maxsplit=1)
+    query = update.message.text.split("//", maxsplit=1)
+    exta_notes = query[1].strip() if len(query) > 1 else ""
+    query = query[0].strip()
+    query = query.split(maxsplit=1)
     if len(query) < 2:
         await update.message.reply_text("Please provide a movie ID.")
         return
@@ -158,13 +161,21 @@ async def getmovie_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if poster is None:
             await update.message.reply_text("Failed to download poster.")
             return
-        await update.message.reply_photo(photo=poster, caption=tmdb.print_result(movie), parse_mode='Markdown')
+        
+        caption = tmdb.print_result(movie)
+        if exta_notes:
+            caption += f"\n\n⚠️ Note extra: {exta_notes}"
+
+        await update.message.reply_photo(photo=poster, caption=caption, parse_mode='Markdown')
     
     except Exception as e:
         await update.message.reply_text(f"Error fetching image: {e}")
 
 async def gettv_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.message.text.split(maxsplit=1)
+    query = update.message.text.split("//",maxsplit=1)
+    exta_notes = query[1].strip() if len(query) > 1 else ""
+    query = query[0].strip()
+    query = query.split(maxsplit=1)
     if len(query) < 2:
         await update.message.reply_text("Please provide a TV show ID.")
         return
@@ -185,7 +196,12 @@ async def gettv_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         if poster is None:
             await update.message.reply_text("Failed to download poster.")
             return
-        await update.message.reply_photo(photo=poster, caption=tmdb.print_result(tv_show), parse_mode='Markdown')
+        
+        caption = tmdb.print_result(tv_show)
+        if exta_notes:
+            caption += f"\n\n⚠️ Note extra: {exta_notes}"
+
+        await update.message.reply_photo(photo=poster, caption=caption, parse_mode='Markdown')
     
     except Exception as e:
         await update.message.reply_text(f"Error fetching image: {e}")
