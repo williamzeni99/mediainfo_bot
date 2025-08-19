@@ -1,4 +1,4 @@
-TELEGRAM_TOKEN=xxxxx:xxxxxxxxxxx
-TMDB_API=xxxxxxxxxxxxxxx
-CHANNEL_ID=xxxxxxxxxxxxxxxx
-MY_CHAT_ID=xxxxxxx
+TELEGRAM_TOKEN=your_bot_token_here
+TMDB_API=your_tmdb_api_key_here
+CHANNEL_ID=your_channel_id_here
+MY_CHAT_ID=your_personal_chat_id_here
