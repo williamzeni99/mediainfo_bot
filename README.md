@@ -87,7 +87,7 @@ A Telegram bot for retrieving detailed information about movies and TV shows fro
 
 2. **Run with Docker Compose**:
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 ## Usage Examples
