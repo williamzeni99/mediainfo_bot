@@ -149,7 +149,7 @@ class TMDB_WRAPPER:
             print(f"Error getting TV show details: {e}")
             return None
 
-    def print_result(self, result: TMDB_RESULT)-> str:
+    def print_result(self, result: TMDB_RESULT, extranotes:str="")-> str:
         """return a str with icons for telegram and resolves genere ids"""
         
         if len(result.genres_ids) == 0 and len(result.genres)!= 0:
@@ -186,11 +186,13 @@ class TMDB_WRAPPER:
 
         message_text += "\n\n"
         
-        if len(result.overview) + len(message_text) > 1000:
-            message_text += f"📝 {result.overview[:1000-len(message_text)]}..."
+        if len(result.overview) + len(message_text) + len(extranotes) > 1000:
+            message_text += f"📝 {result.overview[:1000-len(message_text)-len(extranotes)]}..."
         else:
             message_text += f"📝 {result.overview}"    
-       
+
+        if extranotes:
+            message_text += f"\n\n⚠️ Extra Notes: {extranotes}\n"
         return message_text
     
     def find_youtube_trailer(self, result: TMDB_RESULT) -> str|None:

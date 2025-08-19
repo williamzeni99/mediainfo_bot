@@ -173,10 +173,8 @@ async def getmovie_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await update.message.reply_text("Failed to download poster.")
             return
         
-        caption = tmdb.print_result(movie)
-        if exta_notes:
-            caption += f"\n\n⚠️ Note extra: {exta_notes}"
-
+        caption = tmdb.print_result(movie, extranotes=exta_notes)
+        
         await update.message.reply_photo(photo=poster, caption=caption, parse_mode='Markdown')
     
     except Exception as e:
@@ -208,9 +206,7 @@ async def gettv_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             await update.message.reply_text("Failed to download poster.")
             return
         
-        caption = tmdb.print_result(tv_show)
-        if exta_notes:
-            caption += f"\n\n⚠️ Note extra: {exta_notes}"
+        caption = tmdb.print_result(tv_show, extranotes=exta_notes)
 
         await update.message.reply_photo(photo=poster, caption=caption, parse_mode='Markdown')
     
@@ -245,13 +241,15 @@ async def send_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.message.reply_text("Please provide a movie or TV show and an ID.")
         return  
     try:
+
+        [query[i].strip() for i in range(len(query))]  # Strip whitespace from all parts of the query
         media_id = int(query[2].strip())
         media_type = "movie" if "movie" in query[1].lower() else "tv-show"
 
-        if query[3]:
-            extra_notes = query[3].strip()
+        if len(query) > 3:
+            extra_notes = query[-1]
         else:
-            extra_notes = None
+            extra_notes = ""
         
         if media_type == "movie":
             media = tmdb.get_movie(media_id)
@@ -271,10 +269,7 @@ async def send_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await update.message.reply_text("Failed to download poster.")
             return
         
-        caption = tmdb.print_result(media)
-
-        if extra_notes:
-            caption += f"\n\n⚠️ Note extra: {extra_notes}"
+        caption = tmdb.print_result(media, extranotes=extra_notes)
         
         # Send to channel
         await context.bot.send_photo(chat_id=CHANNEL_ID, photo=poster, caption=caption, parse_mode='Markdown')
