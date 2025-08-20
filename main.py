@@ -1,6 +1,6 @@
 import os
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from dotenv import load_dotenv
 from tmdb_wrapper import TMDB_WRAPPER, TMDB_RESULT
 
@@ -36,12 +36,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
     await update.message.reply_text(
         "Welcome to the Movie & TV Show Bot! 🎬\n\n"
-        "Send me a movie or TV show title to search for it!"
+        "Send me a movie or TV show title to search for it!",
+        reply_markup=ReplyKeyboardRemove()
     )
 
 async def search_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the search query from user."""
     query = update.message.text
+    
+    # Check if this is an abort command
+    if query == "❌ Abort Search":
+        await update.message.reply_text(
+            "Search aborted. Send me a movie or TV show title to search for it!",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        # Clear stored results
+        context.user_data.clear()
+        return
+    
+    # Check if this is a selection from results
+    if query and query[0].isdigit() and '.' in query and 'search_results' in context.user_data:
+        await handle_selection(update, context, query)
+        return
     
     # Show typing indicator
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
@@ -51,9 +67,13 @@ async def search_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if not results:
         await update.message.reply_text(
-            "❌ No results found. Try a different search term."
+            "❌ No results found. Try a different search term.",
+            reply_markup=ReplyKeyboardRemove()
         )
         return
+    
+    # Store results in context for later use
+    context.user_data['search_results'] = results
     
     text = f"🎬 *Search Results for:* `{query}`\n"
     text += f"📊 Found {len(results)} result(s)\n\n"
@@ -76,13 +96,15 @@ async def search_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         text += f"*{i}.* {media_icon} *{movie.title}*\n"
         text += f"   └ {year_text} • {rating_icon} {rating}/10 • ID: `{movie.id}`\n"
         text += f"   └ Type: _{movie.media_type.title()}_\n\n"
-        button_text = f"{i}. {media_icon} {movie.title[:20]}{'...' if len(movie.title)>20 else ''} ({movie.get_year()})"
         
-        callback_data = f"select_{movie.media_type}_{movie.id}"
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+        # Create keyboard button
+        button_text = f"{i}. {media_icon} {movie.title[:25]}{'...' if len(movie.title)>25 else ''}"
+        keyboard.append([KeyboardButton(button_text)])
 
+    # Add abort button
+    keyboard.append([KeyboardButton("❌ Abort Search")])
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     
     await update.message.reply_text(
         text=text,
@@ -90,34 +112,53 @@ async def search_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         reply_markup=reply_markup
     )
 
-async def selection_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle movie/TV show selection from inline keyboard."""
-    query = update.callback_query
-    await query.answer()
-    
-    # Parse callback data
+async def handle_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, selection_text: str):
+    """Handle selection from keyboard buttons."""
+    # Extract the number from the selection
     try:
-        _, media_type, item_id = query.data.split('_', 2)
-        item_id = int(item_id)
+        selection_num = int(selection_text.split('.')[0]) - 1
+        results = context.user_data.get('search_results', [])
+        
+        if selection_num < 0 or selection_num >= len(results):
+            await update.message.reply_text(
+                "❌ Invalid selection.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            return
+        
+        selected_item = results[selection_num]
+        
     except (ValueError, IndexError):
-        await query.edit_message_text("❌ Invalid selection.")
+        await update.message.reply_text(
+            "❌ Invalid selection.",
+            reply_markup=ReplyKeyboardRemove()
+        )
         return
     
     # Show typing indicator
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     
     # Get detailed information
-    if media_type == "movie":
-        result = tmdb.get_movie(item_id)
-    elif media_type == "tv-show":
-        result = tmdb.get_tv_show(item_id)
+    if selected_item.media_type == "movie":
+        result = tmdb.get_movie(selected_item.id)
+    elif selected_item.media_type == "tv-show":
+        result = tmdb.get_tv_show(selected_item.id)
     else:
-        await query.edit_message_text("❌ Unknown media type.")
+        await update.message.reply_text(
+            "❌ Unknown media type.",
+            reply_markup=ReplyKeyboardRemove()
+        )
         return
     
     if not result:
-        await query.edit_message_text("❌ Could not fetch details for this item.")
+        await update.message.reply_text(
+            "❌ Could not fetch details for this item.",
+            reply_markup=ReplyKeyboardRemove()
+        )
         return
+    
+    # Clear the keyboard and stored results
+    context.user_data.clear()
     
     # Format the message
     caption = tmdb.print_result(result)
@@ -127,26 +168,27 @@ async def selection_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if poster_url:
         try:
-            # Send photo with caption
+            # Send photo with caption and clean keyboard
             await context.bot.send_photo(
                 chat_id=update.effective_chat.id,
                 photo=poster_url,
                 caption=caption,
-                parse_mode='Markdown'
+                parse_mode='Markdown',
+                reply_markup=ReplyKeyboardRemove()
             )
-            # Delete the search results message
-            await query.delete_message()
         except Exception as e:
             # If photo fails, send text message
-            await query.edit_message_text(
+            await update.message.reply_text(
                 f"🖼️ *Poster not available*\n\n{caption}",
-                parse_mode='Markdown'
+                parse_mode='Markdown',
+                reply_markup=ReplyKeyboardRemove()
             )
     else:
         # No poster available, send text only
-        await query.edit_message_text(
+        await update.message.reply_text(
             f"🖼️ *No poster available*\n\n{caption}",
-            parse_mode='Markdown'
+            parse_mode='Markdown',
+            reply_markup=ReplyKeyboardRemove()
         )
 
 #create telegram app
@@ -154,7 +196,6 @@ app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
 # Add handlers
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(selection_handler, pattern="^select_"))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_query_handler))
 
 app.run_polling()
