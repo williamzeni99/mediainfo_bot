@@ -1,6 +1,7 @@
 import os
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+import uuid
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineQueryResultPhoto
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, InlineQueryHandler
 from dotenv import load_dotenv
 from tmdb_wrapper import TMDB_WRAPPER, TMDB_RESULT
 
@@ -47,9 +48,55 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         "Welcome to the Movie & TV Show Bot! 🎬\n\n"
-        "Send me a movie or TV show title to search for it!",
-        reply_markup=ReplyKeyboardRemove()
+        "🔍 *How to use:*\n"
+        "• Send me a movie or TV show title to search\n"
+        "• Use inline: `@botname <title>` for quick results\n"
+        "💡 *Inline mode* lets you search and share results in any chat!",
+        reply_markup=ReplyKeyboardRemove(),
+        parse_mode='Markdown'
     )
+
+async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle inline queries for quick movie/TV show search."""
+    query = update.inline_query.query
+    
+    if not query:
+        return
+    
+    try:
+        # Search for movies and TV shows
+        results_list = tmdb.search(query)[:10]  # Limit to 10 results
+        inline_results = []
+        
+        for movie in results_list:
+            # Get basic movie info
+            title = movie.get_formatted_title()
+            
+            # Skip if no poster available (inline queries need images)
+            if not movie.poster_path:
+                continue
+            
+            # Get the detailed caption
+            caption = tmdb.print_result(movie) 
+            
+            # Create photo result with poster
+            result = InlineQueryResultPhoto(
+                id=str(uuid.uuid4()),
+                photo_url=movie.get_poster_url(),
+                thumbnail_url=movie.get_poster_url(),  # Use same URL for thumbnail
+                title=title,
+                description=f"📅 {movie.get_year()} • ⭐ {movie.vote_average}/10",
+                caption=caption,
+                parse_mode='Markdown'
+            )
+            inline_results.append(result)
+        
+        await update.inline_query.answer(inline_results)
+        
+    except Exception as e:
+        # Return empty results on error
+        print(f"Error during inline query: {e}")
+        await update.inline_query.answer([])
 
 async def search_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the search query from user."""
@@ -397,6 +444,7 @@ app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
 # Add handlers
 app.add_handler(CommandHandler("start", start))
+app.add_handler(InlineQueryHandler(inline_query))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_query_handler))
 
 app.run_polling()
