@@ -1,8 +1,7 @@
 import os
-from telegram import Update, InlineQueryResultPhoto
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, InlineQueryHandler, MessageHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
 from dotenv import load_dotenv
-import uuid
 from tmdb_wrapper import TMDB_WRAPPER, TMDB_RESULT
 
 
@@ -31,253 +30,188 @@ if not MY_CHAT_ID:
 #create a tmdb wrapper
 tmdb = TMDB_WRAPPER(TMDB_API)
 
+# Conversation states
+WAITING_FOR_SEARCH = 1
+
+# Custom keyboard with search button
+def get_main_keyboard():
+    keyboard = [[KeyboardButton("🔍 Search")]]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send a message when the command /start is issued."""
+    await update.message.reply_text(
+        "Welcome to the Movie & TV Show Bot! 🎬\n\n"
+        "Click the Search button below to find movies and TV shows.",
+        reply_markup=get_main_keyboard()
+    )
+
+async def search_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the search button press."""
+    if update.message.text == "🔍 Search":
+        await update.message.reply_text(
+            "🎬 Insert a movie or TV show to search:",
+            reply_markup=get_main_keyboard()
+        )
+        return WAITING_FOR_SEARCH
+    return ConversationHandler.END
+
+async def search_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the search query from user."""
+    query = update.message.text
+    
+    # Show typing indicator
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    
+    # Search for movies and TV shows
+    results = tmdb.search(query)
+    
+    if not results:
+        await update.message.reply_text(
+            "❌ No results found. Try a different search term.",
+            reply_markup=get_main_keyboard()
+        )
+        return ConversationHandler.END
+    
+    text = f"🎬 *Search Results for:* `{query}`\n"
+    text += f"📊 Found {len(results)} result(s)\n\n"
+    
+    keyboard = []
+
+    for i, movie in enumerate(results, 1):
+        # Media type icon
+        media_icon = "🎬" if movie.media_type == "movie" else "📺"
+        
+        # Rating stars
+        rating = movie.vote_average
+        rating_icon = "⭐"
+        
+        # Format year
+        year = movie.get_year()
+        year_text = f"📅 {year}" if year != "Unknown" else "📅 N/A"
+        
+        # Build result entry
+        text += f"*{i}.* {media_icon} *{movie.title}*\n"
+        text += f"   └ {year_text} • {rating_icon} {rating}/10 • ID: `{movie.id}`\n"
+        text += f"   └ Type: _{movie.media_type.title()}_\n\n"
+        button_text = f"{i}. {media_icon} {movie.title[:20]}{'...' if len(movie.title)>20 else ''} ({movie.get_year()})"
+        
+        callback_data = f"select_{movie.media_type}_{movie.id}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        text=text,
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+    
+    return ConversationHandler.END
+
+async def selection_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle movie/TV show selection from inline keyboard."""
+    query = update.callback_query
+    await query.answer()
+    
+    # Parse callback data
+    try:
+        _, media_type, item_id = query.data.split('_', 2)
+        item_id = int(item_id)
+    except (ValueError, IndexError):
+        await query.edit_message_text("❌ Invalid selection.")
+        return
+    
+    # Show typing indicator
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    
+    # Get detailed information
+    if media_type == "movie":
+        result = tmdb.get_movie(item_id)
+    elif media_type == "tv-show":
+        result = tmdb.get_tv_show(item_id)
+    else:
+        await query.edit_message_text("❌ Unknown media type.")
+        return
+    
+    if not result:
+        await query.edit_message_text("❌ Could not fetch details for this item.")
+        return
+    
+    # Format the message
+    caption = tmdb.print_result(result)
+    
+    # Get poster URL
+    poster_url = result.get_poster_url()
+    
+    if poster_url:
+        try:
+            # Send photo with caption
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=poster_url,
+                caption=caption,
+                parse_mode='Markdown',
+                reply_markup=get_main_keyboard()
+            )
+            # Delete the search results message
+            await query.delete_message()
+        except Exception as e:
+            # If photo fails, send text message
+            await query.edit_message_text(
+                f"🖼️ *Poster not available*\n\n{caption}",
+                parse_mode='Markdown'
+            )
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Return to main menu:",
+                reply_markup=get_main_keyboard()
+            )
+    else:
+        # No poster available, send text only
+        await query.edit_message_text(
+            f"🖼️ *No poster available*\n\n{caption}",
+            parse_mode='Markdown'
+        )
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Return to main menu:",
+            reply_markup=get_main_keyboard()
+        )
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel the conversation."""
+    await update.message.reply_text(
+        "Search cancelled.",
+        reply_markup=get_main_keyboard()
+    )
+    return ConversationHandler.END
+
+async def handle_other_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle other messages when not in search mode."""
+    await update.message.reply_text(
+        "Click the Search button to find movies and TV shows! 🎬",
+        reply_markup=get_main_keyboard()
+    )
+
 #create telegram app
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
+# Add conversation handler for search flow
+search_conv_handler = ConversationHandler(
+    entry_points=[MessageHandler(filters.Regex("^🔍 Search$"), search_button_handler)],
+    states={
+        WAITING_FOR_SEARCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_query_handler)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel)],
+)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    text="Welcome to the Media Info! Use @mediajellyinfoer_bot <media_name> to get inline suggestions. Click on one cover to get the results."
-    text += "\n\nYou can also use the following commands:\n"
-    text += "/search <title> - Search for movies or TV shows IDS (more extensive)\n"
-    text += "/getmovie <id> - Get movie details by ID\n"
-    text += "/gettv <id> - Get TV show details by ID\n"
-    # text += "/img <title> - Get poster image for a movie or TV show\n"
-    text += "/send <movie/tv-show> <id> [extranotes (optional)] - Send media to channel\n"
-    await update.message.reply_text(text)
-
-async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.inline_query.query.split("///")
-    extra_notes = query[1].strip() if len(query) > 1 else ""
-    query = query[0].strip() if query else ""
-    # extra_notes = ""
-    print(f"Received inline query: {query}, extra notes: {extra_notes}")
-    if not query:
-        return
-    
-    try:
-        movies = tmdb.search(query)[:10]
-        results = []
-        for movie in movies:
-            # Get basic movie info
-            title = movie.get_formatted_title()
-
-            print(f"Processing movie: {title}")
-
-            if movie.poster_path is None:
-                print(f"No poster available for {title}, skipping photo result.")
-                continue
-
-
-            caption = tmdb.print_result(movie)
-            if extra_notes:
-                caption += f"\n\n⚠️ Note extra: {extra_notes}"
-
-
-            # Create photo result with poster
-            result = InlineQueryResultPhoto(
-                id=str(uuid.uuid4()),
-                photo_url=movie.get_poster_url(),
-                thumbnail_url=movie.get_thumbnail_url(),
-                title=title,
-                description=f"📅 {movie.release_date}",
-                caption= caption,
-                parse_mode='Markdown'
-            )
-            results.append(result)
-        
-        await update.inline_query.answer(results)
-        
-    except Exception as e:
-        # Return empty results on error
-        print(f"Error during inline query: {e}")
-        await update.inline_query.answer([])
-
-async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    
-    query = update.message.text.split(maxsplit=1)
-    if len(query) < 2:
-        await update.message.reply_text("🔍 Please provide a movie or TV show name to search for.")
-        return
-    
-    title = query[1]
-    try:
-        movies = tmdb.search(title)
-        if not movies:
-            await update.message.reply_text(f"❌ No results found for '{title}'. Try different keywords or check spelling.")
-            return
-        
-        # Header with search results count
-        text = f"🎬 *Search Results for:* `{title}`\n"
-        text += f"📊 Found {len(movies)} result(s)\n\n"
-        
-        for i, movie in enumerate(movies, 1):
-            # Media type icon
-            media_icon = "🎬" if movie.media_type == "movie" else "📺"
-            
-            # Rating stars
-            rating = movie.vote_average
-            rating_icon = "⭐"
-            
-            # Format year
-            year = movie.get_year()
-            year_text = f"📅 {year}" if year != "Unknown" else "📅 N/A"
-            
-            # Build result entry
-            text += f"*{i}.* {media_icon} *{movie.title}*\n"
-            text += f"   └ {year_text} • {rating_icon} {rating}/10 • ID: `{movie.id}`\n"
-            text += f"   └ Type: _{movie.media_type.title()}_\n\n"
-
-        # # Footer with usage instructions
-        # text += "💡 *Usage:*\n"
-        # text += "• `/getmovie <id>` - Get movie details\n"
-        # text += "• `/gettv <id>` - Get TV show details\n"
-        # text += "• Use inline: `@botname <title>` for quick results"
-
-        await update.message.reply_text(text, parse_mode='Markdown')
-    except Exception as e:
-        await update.message.reply_text(f"⚠️ Error fetching results: {e}")
-        return
-
-async def getmovie_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.message.text.split("//", maxsplit=1)
-    exta_notes = query[1].strip() if len(query) > 1 else ""
-    query = query[0].strip()
-    query = query.split(maxsplit=1)
-    if len(query) < 2:
-        await update.message.reply_text("Please provide a movie ID.")
-        return
-    
-    try:
-        movie_id = int(query[1])
-        movie = tmdb.get_movie(movie_id)
-        
-        if not movie:
-            await update.message.reply_text("No results found for this ID.")
-            return
-        
-        if movie.poster_path is None:
-            await update.message.reply_text("No poster available for this media.")
-            return
-        
-        poster = movie.download_poster()
-        if poster is None:
-            await update.message.reply_text("Failed to download poster.")
-            return
-        
-        caption = tmdb.print_result(movie, extranotes=exta_notes)
-        
-        await update.message.reply_photo(photo=poster, caption=caption, parse_mode='Markdown')
-    
-    except Exception as e:
-        await update.message.reply_text(f"Error fetching image: {e}")
-
-async def gettv_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.message.text.split("//",maxsplit=1)
-    exta_notes = query[1].strip() if len(query) > 1 else ""
-    query = query[0].strip()
-    query = query.split(maxsplit=1)
-    if len(query) < 2:
-        await update.message.reply_text("Please provide a TV show ID.")
-        return
-    
-    try:
-        tv_id = int(query[1])
-        tv_show = tmdb.get_tv_show(tv_id)
-        
-        if not tv_show:
-            await update.message.reply_text("No results found for this ID.")
-            return
-        
-        if tv_show.poster_path is None:
-            await update.message.reply_text("No poster available for this media.")
-            return
-        
-        poster = tv_show.download_poster()
-        if poster is None:
-            await update.message.reply_text("Failed to download poster.")
-            return
-        
-        caption = tmdb.print_result(tv_show, extranotes=exta_notes)
-
-        await update.message.reply_photo(photo=poster, caption=caption, parse_mode='Markdown')
-    
-    except Exception as e:
-        await update.message.reply_text(f"Error fetching image: {e}")
-
-# funcion that on generic message prints the message metadata (just for debugging)
-async def generic_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = update.message
-    if not message:
-        await update.message.reply_text("No message found.")
-        return
-    
-    metadata = f"Message ID: {message.message_id}\n"
-    metadata += f"Chat ID: {message.chat.id}\n"
-    metadata += f"From: {message.from_user.full_name} (@{message.from_user.username})\n"
-    metadata += f"Text: {message.text}\n"
-    metadata += f"forwarded: {message.forward_origin.to_json() if message.forward_origin is not None else None}\n\n"
-    metadata += f"forwaded chat id: {message.author_signature}\n"
-    
-    await update.message.reply_text(metadata)
-
-async def send_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    #read if movie or tv show and id then send to channel 
-    if str(update.message.from_user.id) != MY_CHAT_ID:
-        await update.message.reply_text("This command can only be used by the owner.")
-        return
-
-    query = update.message.text.split(maxsplit=3)
-    if len(query) < 3:
-        await update.message.reply_text("Please provide a movie or TV show and an ID.")
-        return  
-    try:
-
-        [query[i].strip() for i in range(len(query))]  # Strip whitespace from all parts of the query
-        media_id = int(query[2].strip())
-        media_type = "movie" if "movie" in query[1].lower() else "tv-show"
-
-        if len(query) > 3:
-            extra_notes = query[-1]
-        else:
-            extra_notes = ""
-        
-        if media_type == "movie":
-            media = tmdb.get_movie(media_id)
-        else:
-            media = tmdb.get_tv_show(media_id)
-        
-        if not media:
-            await update.message.reply_text("No results found for this ID.")
-            return
-        
-        if media.poster_path is None:
-            await update.message.reply_text("No poster available for this media.")
-            return
-        
-        poster = media.download_poster()
-        if poster is None:
-            await update.message.reply_text("Failed to download poster.")
-            return
-        
-        caption = tmdb.print_result(media, extranotes=extra_notes)
-        
-        # Send to channel
-        await context.bot.send_photo(chat_id=CHANNEL_ID, photo=poster, caption=caption, parse_mode='Markdown')
-        await update.message.reply_text("Media sent to channel successfully.")
-    except Exception as e:
-        await update.message.reply_text(f"Error sending to channel: {e}")
-
+# Add handlers
 app.add_handler(CommandHandler("start", start))
-app.add_handler(InlineQueryHandler(callback=inline_query))
-# app.add_handler(CommandHandler("img", getimage))  # Reuse start handler for help command
-app.add_handler(CommandHandler("getmovie", getmovie_byid))  # New command to get movie by ID
-app.add_handler(CommandHandler("gettv", gettv_byid))  # New command to get TV show by ID
-app.add_handler(CommandHandler("search", search))  # New command to search for movies or TV shows
-app.add_handler(CommandHandler("send", send_to_channel))  # New command to send media to channel
-
-
-# Add a handlar that triggers on any message
-# app.add_handler(MessageHandler(filters=None, callback=generic_message))  # New command to print message metadata
+app.add_handler(search_conv_handler)
+app.add_handler(CallbackQueryHandler(selection_handler, pattern="^select_"))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_other_messages))
 
 app.run_polling()
 
