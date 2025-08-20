@@ -92,59 +92,50 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         print(f"Error during inline query: {e}")
         await update.inline_query.answer([])
 
-# async def getimage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-#     query = update.message.text.split(maxsplit=1)
-#     if len(query) < 2:
-#         await update.message.reply_text("Please provide a movie or TV show name.")
-#         return
-    
-#     title = query[1]
-#     try:
-#         movies = tmdb.search(title)
-#         if not movies:
-#             await update.message.reply_text("No results found.")
-#             return
-        
-#         # Use the first result for simplicity
-#         movie = movies[0]
-        
-#         if movie.poster_path is None:
-#             await update.message.reply_text("No poster available for this media.")
-#             return
-        
-#         poster = movie.download_poster()
-#         if poster is None:
-#             await update.message.reply_text("Failed to download poster.")
-#             return
-#         await update.message.reply_photo(photo=poster, caption=movie.get_formatted_title())
-    
-#     except Exception as e:
-#         await update.message.reply_text(f"Error fetching image: {e}")
-
-
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     query = update.message.text.split(maxsplit=1)
     if len(query) < 2:
-        await update.message.reply_text("Please provide a movie or TV show name.")
+        await update.message.reply_text("🔍 Please provide a movie or TV show name to search for.")
         return
     
     title = query[1]
     try:
         movies = tmdb.search(title)
         if not movies:
-            await update.message.reply_text("No results found.")
+            await update.message.reply_text(f"❌ No results found for '{title}'. Try different keywords or check spelling.")
             return
         
-        text="Results for your search:\n\n"
-        text+= "TITLE - MEDIA TYPE: ID\n"
-        text+= "-------------------------\n"
-        for movie in movies:
-            text += f"{movie.get_formatted_title()} - {movie.media_type}: {movie.id}\n"
+        # Header with search results count
+        text = f"🎬 *Search Results for:* `{title}`\n"
+        text += f"📊 Found {len(movies)} result(s)\n\n"
+        
+        for i, movie in enumerate(movies, 1):
+            # Media type icon
+            media_icon = "🎬" if movie.media_type == "movie" else "📺"
+            
+            # Rating stars
+            rating = movie.vote_average
+            rating_icon = "⭐"
+            
+            # Format year
+            year = movie.get_year()
+            year_text = f"📅 {year}" if year != "Unknown" else "📅 N/A"
+            
+            # Build result entry
+            text += f"*{i}.* {media_icon} *{movie.title}*\n"
+            text += f"   └ {year_text} • {rating_icon} {rating}/10 • ID: `{movie.id}`\n"
+            text += f"   └ Type: _{movie.media_type.title()}_\n\n"
+
+        # # Footer with usage instructions
+        # text += "💡 *Usage:*\n"
+        # text += "• `/getmovie <id>` - Get movie details\n"
+        # text += "• `/gettv <id>` - Get TV show details\n"
+        # text += "• Use inline: `@botname <title>` for quick results"
 
         await update.message.reply_text(text, parse_mode='Markdown')
     except Exception as e:
-        await update.message.reply_text(f"Error fetching results: {e}")
+        await update.message.reply_text(f"⚠️ Error fetching results: {e}")
         return
 
 async def getmovie_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -213,8 +204,7 @@ async def gettv_byid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     except Exception as e:
         await update.message.reply_text(f"Error fetching image: {e}")
 
-
-# funcion that on generic message prints the message metadata
+# funcion that on generic message prints the message metadata (just for debugging)
 async def generic_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     if not message:
