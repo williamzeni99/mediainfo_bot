@@ -4,21 +4,36 @@ A Telegram bot for retrieving detailed information about movies and TV shows fro
 
 ## Features
 
-- 🎬 **Movie & TV Show Search**: Search for movies and TV shows by title
-- 📊 **Detailed Information**: Get comprehensive details including ratings, genres, release dates, and overviews
+- 🎬 **Movie & TV Show Search**: Search for movies and TV shows by title with interactive results
+- 📊 **Detailed Information**: Get comprehensive details including ratings, genres, release dates, overviews, and status
 - 🖼️ **Poster Images**: View high-quality poster images for each media item
 - 📱 **Inline Queries**: Use inline mode for quick searches directly in any chat
-- 📢 **Channel Integration**: Optionally send media information to your personal channel
-- 🔍 **ID-based Lookups**: Search by specific TMDB IDs for precise results
+- 📢 **Channel Integration**: Send media information to your personal channel (authorized users only)
+- 🎯 **Interactive Selection**: Choose from search results using custom keyboard buttons
+- 📝 **Custom Notes**: Add extra notes when sending to channel
+- 🔄 **Smart Search**: Automatically detects movies vs TV shows and provides appropriate details
 
-## Commands
+## How to Use
 
-- `/start` - Display welcome message and available commands
-- `/search <title>` - Search for movies or TV shows (extensive search)
-- `/getmovie <id>` - Get movie details by TMDB ID
-- `/gettv <id>` - Get TV show details by TMDB ID
-- `/send <movie/tv-show> <id> [extra_notes]` - Send media information to your channel
+### Basic Search
+Simply send the bot a movie or TV show title, and it will return a list of results. Use the interactive keyboard to select the specific item you want detailed information about.
+
+#### Example Workflow
+1. Send: `Inception`
+2. Bot shows search results with buttons
+3. Click: `1. 🎬 Inception (2010)`
+4. Bot shows detailed info with poster
+5. (If authorized) Click `📤 Send` to share to your channel
+
+### Commands Available
+
+- `/start` - Display welcome message and instructions
+- **Text Search**: Send any movie or TV show title (no command needed)
 - **Inline mode**: Use `@your_bot_username <media_name>` in any chat for quick searches
+
+### Special Features (Authorized Users Only)
+- 📤 **Send to Channel**: Send the current result to your configured channel
+- 📝 **Edit Extra Notes**: Add custom notes before sending to channel
 
 ## Installation & Configuration
 
@@ -54,9 +69,25 @@ A Telegram bot for retrieving detailed information about movies and TV shows fro
    MY_CHAT_ID=your_personal_chat_id_here
    ```
 
+   **Note**: All four environment variables are required for the bot to run properly. The `CHANNEL_ID` and `MY_CHAT_ID` are used for the channel integration feature.
+
 ### Installation Options
 
-#### Option 1: Using Poetry 
+#### Option 1: Using Docker (Recommended)
+
+1. **Build and run with Docker Compose**:
+   ```bash
+   docker compose up -d
+   ```
+
+   To rebuild after changes:
+   ```bash
+   docker compose build
+   docker compose up -d
+   ```
+
+
+#### Option 2: Using Poetry
 
 1. **Install Poetry** (if not already installed):
    ```bash
@@ -78,42 +109,10 @@ A Telegram bot for retrieving detailed information about movies and TV shows fro
    poetry run python main.py
    ```
 
-#### Option 2: Using Docker
-
-1. **Build with Docker Compose**:
-   ```bash
-   docker compose build
-   ```
-
-2. **Run with Docker Compose**:
-   ```bash
-   docker compose up -d
-   ```
-
-## Usage Examples
-
-### Basic Search
-```
-/search The Matrix
-```
-
-### Get Specific Movie
-```
-/getmovie 603
-```
-
-### Get TV Show
-```
-/gettv 1399
-```
-
-### Send to Channel (with optional notes)
-```
-/send movie 603 Great sci-fi classic!
-```
-
-### Inline Query
+### Inline Query (Quick Search)
 Type in any chat: `@your_bot_username Inception`
+This allows you to search and share results without leaving your current conversation.
+
 
 ## Requirements
 
@@ -121,12 +120,6 @@ Type in any chat: `@your_bot_username Inception`
 - Valid TMDB API key
 - Telegram Bot Token
 - Internet connection
-
-## Dependencies
-
-- `python-telegram-bot` - Telegram Bot API wrapper
-- `python-dotenv` - Environment variable management
-- `tmdbsimple` - TMDB API wrapper
 
 ## License
 
