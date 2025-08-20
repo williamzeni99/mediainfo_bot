@@ -32,13 +32,15 @@ tmdb = TMDB_WRAPPER(TMDB_API)
 
 # Store the current search result for the authorized user
 current_search_result = None
+waiting_for_notes = False
 
 # No conversation states needed anymore
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
     # Clear any saved results
-    global current_search_result
+    global current_search_result, waiting_for_notes
+    waiting_for_notes = False
 
     if update.effective_chat.id != int(MY_CHAT_ID):
         current_search_result = None
@@ -52,12 +54,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def search_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the search query from user."""
     query = update.message.text
+    global waiting_for_notes
+    
+    # Check if we're waiting for extra notes from authorized user
+    if waiting_for_notes and str(update.effective_chat.id) == MY_CHAT_ID:
+        await handle_extra_notes(update, context, query)
+        return
     
     # Check if this is an abort command
     if query == "❌ Abort Search":
         # Clear stored results and saved search result
         context.user_data.clear()
         global current_search_result
+        waiting_for_notes = False
 
         if update.effective_chat.id != int(MY_CHAT_ID):
             current_search_result = None
@@ -76,6 +85,11 @@ async def search_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # Check if this is a clear command (authorized user only)
     if query == "🗑️ Clear" and str(update.effective_chat.id) == MY_CHAT_ID:
         await handle_clear_result(update, context)
+        return
+    
+    # Check if this is an edit notes command (authorized user only)
+    if query == "📝 Edit Extra Notes" and str(update.effective_chat.id) == MY_CHAT_ID:
+        await handle_edit_notes_request(update, context)
         return
     
     # Check if this is a selection from results
@@ -196,14 +210,16 @@ async def handle_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, s
         global current_search_result
         current_search_result = {
             'caption': caption,
-            'poster_url': poster_url
+            'poster_url': poster_url,
+            'extra_notes': ''
         }
     
     # Create keyboard for authorized user
     keyboard = None
     if is_authorized_user and current_search_result:
         keyboard = ReplyKeyboardMarkup([
-            [KeyboardButton("📤 Send"), KeyboardButton("🗑️ Clear")]
+            [KeyboardButton("📤 Send"), KeyboardButton("🗑️ Clear")],
+            [KeyboardButton("📝 Edit Extra Notes")]
         ], one_time_keyboard=True, resize_keyboard=True)
     else:
         keyboard = ReplyKeyboardRemove()
@@ -248,19 +264,24 @@ async def handle_send_to_channel(update: Update, context: ContextTypes.DEFAULT_T
         # Show typing indicator
         await context.bot.send_chat_action(chat_id=MY_CHAT_ID, action="typing")
         
+        # Prepare caption with extra notes if available
+        caption_to_send = current_search_result['caption']
+        if current_search_result.get('extra_notes'):
+            caption_to_send += f"\n\n⚠️ *Extra Notes:*\n{current_search_result['extra_notes']}"
+        
         if current_search_result['poster_url']:
             # Send photo with caption to channel
             await context.bot.send_photo(
                 chat_id=CHANNEL_ID,
                 photo=current_search_result['poster_url'],
-                caption=current_search_result['caption'],
+                caption=caption_to_send,
                 parse_mode='Markdown'
             )
         else:
             # Send text only to channel
             await context.bot.send_message(
                 chat_id=CHANNEL_ID,
-                text=f"🖼️ *No poster available*\n\n{current_search_result['caption']}",
+                text=f"🖼️ *No poster available*\n\n{caption_to_send}",
                 parse_mode='Markdown'
             )
         
@@ -280,13 +301,96 @@ async def handle_send_to_channel(update: Update, context: ContextTypes.DEFAULT_T
 
 async def handle_clear_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Clear the saved search result."""
-    global current_search_result
+    global current_search_result, waiting_for_notes
     current_search_result = None
+    waiting_for_notes = False
     
     await update.message.reply_text(
         "🗑️ Saved result cleared. Send me a movie or TV show title to search for it!",
         reply_markup=ReplyKeyboardRemove()
     )
+
+async def handle_edit_notes_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Request extra notes from the user."""
+    global waiting_for_notes
+    
+    if not current_search_result:
+        await update.message.reply_text(
+            "❌ No search result saved to edit.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+    
+    waiting_for_notes = True
+    current_notes = current_search_result.get('extra_notes', '')
+    
+    message = "📝 *Add Extra Notes*\n\nSend me the extra notes you want to add to this movie/TV show."
+    if current_notes:
+        message += f"\n\n*Current notes:*\n{current_notes}"
+    message += "\n\nSend your new notes now:"
+    
+    await update.message.reply_text(
+        message,
+        parse_mode='Markdown',
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+async def handle_extra_notes(update: Update, context: ContextTypes.DEFAULT_TYPE, notes: str):
+    """Handle the extra notes input and update the saved result."""
+    global waiting_for_notes, current_search_result
+    
+    if not current_search_result:
+        await update.message.reply_text(
+            "❌ No search result saved.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        waiting_for_notes = False
+        return
+    
+    # Update the saved result with extra notes
+    current_search_result['extra_notes'] = notes
+    waiting_for_notes = False
+    
+    # Prepare the updated caption
+    caption = current_search_result['caption']
+    if notes:
+        caption += f"\n\n⚠️ *Extra Notes:*\n{notes}"
+    
+    # Create keyboard
+    keyboard = ReplyKeyboardMarkup([
+        [KeyboardButton("📤 Send"), KeyboardButton("🗑️ Clear")],
+        [KeyboardButton("📝 Edit Extra Notes")]
+    ], one_time_keyboard=True, resize_keyboard=True)
+    
+    # Re-send the message with updated notes
+    poster_url = current_search_result['poster_url']
+    
+    # success_msg = "✅ Extra notes added successfully!\n\n"
+    
+    if poster_url:
+        try:
+            # Send photo with updated caption
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=poster_url,
+                caption=f"{caption}",
+                parse_mode='Markdown',
+                reply_markup=keyboard
+            )
+        except Exception as e:
+            # If photo fails, send text message
+            await update.message.reply_text(
+                f"🖼️ *Poster not available*\n\n{caption}",
+                parse_mode='Markdown',
+                reply_markup=keyboard
+            )
+    else:
+        # No poster available, send text only
+        await update.message.reply_text(
+            f"🖼️ *No poster available*\n\n{caption}",
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
 
 #create telegram app
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
