@@ -109,17 +109,6 @@ Simply send the bot a movie or TV show title, and it will return a list of resul
    poetry run python main.py
    ```
 
-### Inline Query (Quick Search)
-Type in any chat: `@your_bot_username Inception`
-This allows you to search and share results without leaving your current conversation.
-
-
-## Requirements
-
-- Python 3.11+
-- Valid TMDB API key
-- Telegram Bot Token
-- Internet connection
 
 ## License
 
