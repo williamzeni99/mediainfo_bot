@@ -30,10 +30,19 @@ if not MY_CHAT_ID:
 #create a tmdb wrapper
 tmdb = TMDB_WRAPPER(TMDB_API)
 
+# Store the current search result for the authorized user
+current_search_result = None
+
 # No conversation states needed anymore
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
+    # Clear any saved results
+    global current_search_result
+
+    if update.effective_chat.id != int(MY_CHAT_ID):
+        current_search_result = None
+    
     await update.message.reply_text(
         "Welcome to the Movie & TV Show Bot! 🎬\n\n"
         "Send me a movie or TV show title to search for it!",
@@ -46,12 +55,27 @@ async def search_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     
     # Check if this is an abort command
     if query == "❌ Abort Search":
+        # Clear stored results and saved search result
+        context.user_data.clear()
+        global current_search_result
+
+        if update.effective_chat.id != int(MY_CHAT_ID):
+            current_search_result = None
+        
         await update.message.reply_text(
             "Search aborted. Send me a movie or TV show title to search for it!",
             reply_markup=ReplyKeyboardRemove()
         )
-        # Clear stored results
-        context.user_data.clear()
+        return
+    
+    # Check if this is a send command (authorized user only)
+    if query == "📤 Send" and str(update.effective_chat.id) == MY_CHAT_ID:
+        await handle_send_to_channel(update, context)
+        return
+    
+    # Check if this is a clear command (authorized user only)
+    if query == "🗑️ Clear" and str(update.effective_chat.id) == MY_CHAT_ID:
+        await handle_clear_result(update, context)
         return
     
     # Check if this is a selection from results
@@ -166,30 +190,103 @@ async def handle_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, s
     # Get poster URL
     poster_url = result.get_poster_url()
     
+    # Check if this is the authorized user and save the result
+    is_authorized_user = str(update.effective_chat.id) == MY_CHAT_ID
+    if is_authorized_user:
+        global current_search_result
+        current_search_result = {
+            'caption': caption,
+            'poster_url': poster_url
+        }
+    
+    # Create keyboard for authorized user
+    keyboard = None
+    if is_authorized_user and current_search_result:
+        keyboard = ReplyKeyboardMarkup([
+            [KeyboardButton("📤 Send"), KeyboardButton("🗑️ Clear")]
+        ], one_time_keyboard=True, resize_keyboard=True)
+    else:
+        keyboard = ReplyKeyboardRemove()
+    
     if poster_url:
         try:
-            # Send photo with caption and clean keyboard
+            # Send photo with caption
             await context.bot.send_photo(
                 chat_id=update.effective_chat.id,
                 photo=poster_url,
                 caption=caption,
                 parse_mode='Markdown',
-                reply_markup=ReplyKeyboardRemove()
+                reply_markup=keyboard
             )
         except Exception as e:
             # If photo fails, send text message
             await update.message.reply_text(
                 f"🖼️ *Poster not available*\n\n{caption}",
                 parse_mode='Markdown',
-                reply_markup=ReplyKeyboardRemove()
+                reply_markup=keyboard
             )
     else:
         # No poster available, send text only
         await update.message.reply_text(
             f"🖼️ *No poster available*\n\n{caption}",
             parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+
+async def handle_send_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send the saved search result to the channel."""
+    global current_search_result
+    
+    if not current_search_result:
+        await update.message.reply_text(
+            "❌ No search result saved to send.",
             reply_markup=ReplyKeyboardRemove()
         )
+        return
+    
+    try:
+        # Show typing indicator
+        await context.bot.send_chat_action(chat_id=MY_CHAT_ID, action="typing")
+        
+        if current_search_result['poster_url']:
+            # Send photo with caption to channel
+            await context.bot.send_photo(
+                chat_id=CHANNEL_ID,
+                photo=current_search_result['poster_url'],
+                caption=current_search_result['caption'],
+                parse_mode='Markdown'
+            )
+        else:
+            # Send text only to channel
+            await context.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=f"🖼️ *No poster available*\n\n{current_search_result['caption']}",
+                parse_mode='Markdown'
+            )
+        
+        await update.message.reply_text(
+            "✅ Successfully sent to channel!",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        
+        # Clear the saved result after sending
+        current_search_result = None
+        
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Failed to send to channel: {str(e)}",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
+async def handle_clear_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Clear the saved search result."""
+    global current_search_result
+    current_search_result = None
+    
+    await update.message.reply_text(
+        "🗑️ Saved result cleared. Send me a movie or TV show title to search for it!",
+        reply_markup=ReplyKeyboardRemove()
+    )
 
 #create telegram app
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
